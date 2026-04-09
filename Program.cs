@@ -91,35 +91,35 @@ namespace PlayerCoder
         //3.Quick Hit
         //4.Attack
         public static void ProcessFighter(HeroContext context) {
-            if (TeamHeroCoder.BattleState.heroWithInitiative.jobClass == HeroJobClass.Fighter) {
-                //The character with initiative is a figher, do something here...
-                Hero braveTarget = CheckAllyWithoutStatus(StatusEffect.Brave, HeroJobClass.Fighter, HeroJobClass.Monk, HeroJobClass.Rogue);
+            Hero braveTarget = CheckAllyWithoutStatus(StatusEffect.Brave, HeroJobClass.Fighter, HeroJobClass.Monk, HeroJobClass.Rogue);
 
-                if (context.deadAlly != null && (Utility.AreAbilityAndTargetLegal(Ability.Resurrection, context.deadAlly, true) || context.hasRevive)) {
-                    if (TryAbility(Ability.Resurrection, context.deadAlly)) {
-                        return;
-                    }
-                    else if (TryAbility(Ability.Revive, context.deadAlly)) {
-                        return;
-                    }
-                }
-                else if (context.lowHPAlly != null && (Utility.AreAbilityAndTargetLegal(Ability.CureSerious, context.lowHPAlly, true) || context.hasPotion)) {
-                    if (TryAbility(Ability.CureSerious, context.lowHPAlly)) {
-                        return;
-                    }
-                    else if (TryAbility(Ability.Potion, context.lowHPAlly)) {
-                        return;
-                    }
-                }
-                else if (TryAbility(Ability.Brave, braveTarget)) {
+            if (context.deadAlly != null && (Utility.AreAbilityAndTargetLegal(Ability.Resurrection, context.deadAlly, true) || context.hasRevive)) {
+                if (TryAbility(Ability.Resurrection, context.deadAlly)) {
                     return;
                 }
-                else if (TryAbility(Ability.QuickHit, context.target)) {
+                else if (TryAbility(Ability.Revive, context.deadAlly)) {
                     return;
                 }
-                else {
-                    TeamHeroCoder.PerformHeroAbility(Ability.Attack, context.target);
+            }
+            else if (context.lowHPAlly != null && (Utility.AreAbilityAndTargetLegal(Ability.CureSerious, context.lowHPAlly, true) || context.hasPotion)) {
+                if (TryAbility(Ability.CureSerious, context.lowHPAlly)) {
+                    return;
                 }
+                else if (TryAbility(Ability.Potion, context.lowHPAlly)) {
+                    return;
+                }
+            }
+            else if (TryAbility(Ability.Ether, context.lowMPAlly)) {
+                return;
+            }
+            else if (TryAbility(Ability.Brave, braveTarget)) {
+                return;
+            }
+            else if (TryAbility(Ability.QuickHit, context.target)) {
+                return;
+            }
+            else {
+                TeamHeroCoder.PerformHeroAbility(Ability.Attack, context.target);
             }
         }
 
@@ -133,7 +133,7 @@ namespace PlayerCoder
             Hero quickCleanseTarget = CheckAllyWithStatus(StatusEffect.Doom, StatusEffect.Petrifying, StatusEffect.Petrified);
             bool isSilenced = SelfHasStatus(context.activeHero, StatusEffect.Silence);
 
-            if (context.deadAlly != null && ((Utility.AreAbilityAndTargetLegal(Ability.Resurrection, context.deadAlly, true)) || context.hasRevive)) {
+            if (context.deadAlly != null && (TryAbility(Ability.Resurrection, context.deadAlly) || context.hasRevive)) {
                 if (TryAbility(Ability.Resurrection, context.deadAlly)) {
                     return;
                 }
@@ -141,7 +141,7 @@ namespace PlayerCoder
                     return;
                 }
             }
-            else if (context.lowHPAlly != null && ((Utility.AreAbilityAndTargetLegal(Ability.CureSerious, context.lowHPAlly, true)) || context.hasPotion)) {
+            else if (context.hasPotion || TryAbility(Ability.CureSerious, context.lowHPAlly)) {
                 if (TryAbility(Ability.CureSerious, context.lowHPAlly)) {
                     return;
                 }
@@ -166,15 +166,17 @@ namespace PlayerCoder
         //Wizard:
         //1.Check if allies need revive, potion or ether
         //2.Flame Strike enemies below 30% HP
-        //3.Poison nova if enemies arnt poisoned
-        //4.Doom enemies without doom
+        //3.Poison nova if enemies are not poisoned
+        //4.Doom enemies without doom if enemies do not have a full remedy
         //5.Meteor
         //6.MagicMissile
         //7.Attack
         public static void ProcessWizard(HeroContext context) {
             Hero doomTarget = CheckEnemyWithoutStatus(StatusEffect.Doom);
             Hero poisonTarget = CheckEnemyWithoutStatus(StatusEffect.Poison);
+            Hero quickDispelTarget = CheckEnemyWithStatus(StatusEffect.Brave, StatusEffect.AutoLife, StatusEffect.Haste);
             bool enemyHasFullRemedy = CheckEnemyForItem(Item.FullRemedy);
+            bool bitterBloomAllies = CheckAlliesForJob(HeroJobClass.Monk, HeroJobClass.Rogue);
 
             if (TryAbility(Ability.Revive, context.deadAlly)) {
                 return;
@@ -185,23 +187,26 @@ namespace PlayerCoder
             else if (TryAbility(Ability.Ether, context.lowMPAlly)) {
                 return;
             }
+            else if (TryAbility(Ability.QuickDispel, quickDispelTarget)) {
+                return;
+            }
             else if (TryAbility(Ability.FlameStrike, context.lowHPEnemy)) {
                 return;
             }
-            else if (TryAbility(Ability.PoisonNova, poisonTarget)) {
+            else if (bitterBloomAllies && TryAbility(Ability.PoisonNova, poisonTarget)) {
                 return;
             }
-            else if (TryAbility(Ability.Doom, doomTarget)) {
+            else if (!enemyHasFullRemedy && TryAbility(Ability.Doom, doomTarget)) {
                 return;
             }
             else if (TryAbility(Ability.Meteor, context.target)) {
                 return;
             }
             else if (TryAbility(Ability.MagicMissile, context.target)) {
-               return;
+                return;
             }
             else {
-              TeamHeroCoder.PerformHeroAbility(Ability.Attack, context.target);
+                TeamHeroCoder.PerformHeroAbility(Ability.Attack, context.target);
             }
             
         }
@@ -245,7 +250,7 @@ namespace PlayerCoder
             else if (TryAbility(Ability.Attack, poisonedEnemy)) {
                 return;
             }
-            else if (TryAbility(Ability.SilenceStrike, silenceTarget)) {
+            else if (silenceTarget.mana >= 20 && TryAbility(Ability.SilenceStrike, silenceTarget)) {
                 return;
             }
             else {
@@ -259,8 +264,6 @@ namespace PlayerCoder
         //3.If health is below half use flurry of blows
         //4.Attack
         public static void ProcessMonk(HeroContext context) {
-            //Monk
-
             //Stats
             bool maxManaBelowHalf = false;
             if (context.activeHero.maxMana <= 40) {
@@ -275,7 +278,6 @@ namespace PlayerCoder
             //Targets
             Hero debraveTarget = CheckEnemyWithoutStatus(StatusEffect.Debrave, HeroJobClass.Fighter, HeroJobClass.Monk, HeroJobClass.Rogue);
             Hero defaithTarget = CheckEnemyWithoutStatus(StatusEffect.Defaith, HeroJobClass.Wizard, HeroJobClass.Cleric, HeroJobClass.Alchemist);
-
 
             if (TryAbility(Ability.Revive, context.deadAlly)) {
                 return;
@@ -562,6 +564,21 @@ namespace PlayerCoder
                 }
             }
             return null;
+        }
+
+        public static bool CheckAlliesForJob(params HeroJobClass[] jobs) {
+            // If no jobs provided, nothing to check
+            if (jobs.Length == 0)
+                return false;
+
+            foreach (Hero hero in TeamHeroCoder.BattleState.allyHeroes) {
+                if (hero.health <= 0) continue;
+
+                if (jobs.Contains(hero.jobClass))
+                    return true;
+            }
+
+            return false;
         }
 
         public static bool TryAbility(Ability ability, Hero target) {
