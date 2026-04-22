@@ -83,7 +83,7 @@ namespace PlayerCoder {
 
             if (TryBasicSupport(context)) return;
 
-            if (TryAbility(Ability.FullRemedy, context.fullRemTarget)) return;
+            if (TryRemedySupport(context)) return;
 
             if (TryAbility(Ability.QuickHit, context.lowHPEnemy)) return;
             if (TryAbility(Ability.Attack, context.lowHPEnemy)) return;
@@ -102,12 +102,19 @@ namespace PlayerCoder {
         //4.Attack
         public static void ProcessCleric(HeroContext context) {
             Hero autoLifeTarget = CheckAllyWithoutStatus(StatusEffect.AutoLife);
-            Hero quickCleanseTarget = CheckAllyWithStatus(StatusEffect.Doom, StatusEffect.Petrifying, StatusEffect.Petrified);
+            Hero quickCleanseTarget = CheckAllyWithStatus(StatusEffect.Doom, StatusEffect.Petrifying, StatusEffect.Petrified, StatusEffect.Silence);
+            Hero faithTarget = CheckAllyWithoutStatus(StatusEffect.Faith, HeroJobClass.Wizard);
+            Hero braveTarget = CheckAllyWithoutStatus(StatusEffect.Brave, HeroJobClass.Fighter, HeroJobClass.Monk, HeroJobClass.Rogue);
 
             if (TryBasicSupport(context)) return;
+            if (TryRemedySupport(context)) return;
+
+            if (TryAbility(Ability.Faith, faithTarget)) return;
 
             if (TryAbility(Ability.QuickCleanse, quickCleanseTarget)) return;
             if (TryAbility(Ability.AutoLife, autoLifeTarget)) return;
+            if (TryAbility(Ability.Brave, braveTarget)) return;
+
             if (TryAbility(Ability.Attack, context.target)) return;
         }
         #endregion
@@ -129,23 +136,23 @@ namespace PlayerCoder {
 
             bool enemyHasFullRemedy = CheckEnemyForItem(Item.FullRemedy);
             bool bitterBloomAllies = CheckAlliesForJob(HeroJobClass.Monk, HeroJobClass.Rogue);
-            bool hasSilence = SelfHasStatus(context.activeHero, StatusEffect.Silence);
-            bool hasDoom = SelfHasStatus(context.activeHero, StatusEffect.Doom, StatusEffect.Petrifying);
+            bool hasFaith = HeroHasStatus(context.activeHero, StatusEffect.Faith);
+
+            int poisonedEnemies = CountEnemiesWithStatus(StatusEffect.Poison);
 
             //Heal 
             if (TryBasicSupport(context)) return;
 
             //Remedy
-            if (hasSilence && TryAbility(Ability.SilenceRemedy, context.activeHero)) return;
-            if (hasDoom && TryAbility(Ability.FullRemedy, context.activeHero)) return;
-            if (TryAbility(Ability.PetrifyRemedy, context.petrifyRemTarget)) return;
+            if (TryRemedySupport(context)) return;
 
             if (TryAbility(Ability.Fireball, context.lowHPEnemy)) return;
 
             //Debuff
-            if (bitterBloomAllies && TryAbility(Ability.PoisonNova, poisonTarget)) return;
-            if (TryAbility(Ability.Slow, slowTarget)) return;
+            if (bitterBloomAllies && poisonedEnemies <= 1 && TryAbility(Ability.PoisonNova, poisonTarget)) return;
+            if (hasFaith && TryAbility(Ability.Meteor, context.target)) return;
             if (!enemyHasFullRemedy && TryAbility(Ability.Doom, doomTarget)) return;
+            if (TryAbility(Ability.Slow, slowTarget)) return;
 
             //Magic attack
             if (TryAbility(Ability.Meteor, context.target)) return;
@@ -168,11 +175,7 @@ namespace PlayerCoder {
             Hero stealTarget = CheckEnemyWithoutStatus(StatusEffect.Petrifying, HeroJobClass.Alchemist);
 
             if (TryBasicSupport(context)) return;
-
-            if (TryAbility(Ability.SilenceRemedy, context.silenceRemTarget)) return;
-            if (TryAbility(Ability.PoisonRemedy, context.poisonRemTarget)) return;
-            if (TryAbility(Ability.PetrifyRemedy, context.petrifyRemTarget)) return;
-            if (TryAbility(Ability.FullRemedy, context.fullRemTarget)) return;
+            if (TryRemedySupport(context)) return;
 
             if (TryAbility(Ability.Steal, stealTarget) && !context.enemyInventoryEmpty && stealTarget != null) return;
 
@@ -211,7 +214,7 @@ namespace PlayerCoder {
                 else if (TryAbility(Ability.Ether, context.lowMPAlly)) return;
             }
 
-            if (TryAbility(Ability.FullRemedy, context.fullRemTarget)) return;
+            if (TryRemedySupport(context)) return;
 
             if (poisonedEnemy != null || context.lowHPEnemy != null) {
                 if (TryAbility(Ability.FlurryOfBlows, context.target)) return;
@@ -250,12 +253,12 @@ namespace PlayerCoder {
             //Items
             if (TryBasicSupport(context)) return;
 
+            if (TryAbility(Ability.Cleanse, cleanseTarget)) return;
+
             //Craft
             if (!AllyHasItem(Item.Revive) && TryAbility(Ability.CraftRevive, context.activeHero)) return;
             if (!AllyHasItem(Item.Ether) && TryAbility(Ability.CraftEther, context.activeHero)) return;
             if (!AllyHasItem(Item.Potion) && TryAbility(Ability.CraftPotion, context.activeHero)) return;
-
-            if (TryAbility(Ability.Cleanse, cleanseTarget)) return;
 
             if (TryAbility(Ability.Slow, slowTarget)) return;
 
@@ -284,8 +287,10 @@ namespace PlayerCoder {
 
             // Allies
             foreach (Hero hero in TeamHeroCoder.BattleState.allyHeroes) {
-                if (hero.health > 0 && hero.health < hero.maxHealth * 0.3f) {
-                    context.lowHPAlly = hero;
+                if (hero.health > 0 && hero.health < hero.maxHealth * 0.3f && !HeroHasStatus(hero, StatusEffect.AutoLife)) {
+                    if (context.lowHPAlly == null || hero.health < context.lowHPAlly.health) {
+                        context.lowHPAlly = hero;
+                    }
                 }
 
                 if (hero.health <= 0) {
@@ -325,44 +330,21 @@ namespace PlayerCoder {
         }
 
         public static Hero CheckEnemyWithoutStatus(StatusEffect status, params HeroJobClass[] jobs) {
-            // If no jobs specified fallback to old behavior
-            if (jobs.Length == 0) {
-                foreach (Hero hero in TeamHeroCoder.BattleState.foeHeroes) {
-                    if (hero.health <= 0) continue;
-
-                    bool hasStatus = false;
-
-                    foreach (StatusEffectAndDuration se in hero.statusEffectsAndDurations) {
-                        if (se.statusEffect == status) {
-                            hasStatus = true;
-                            break;
-                        }
-                    }
-
-                    if (!hasStatus)
-                        return hero;
-                }
-            }
-            else {
-                // PRIORITY LOOP
+            if (jobs.Length > 0) {
                 foreach (HeroJobClass job in jobs) {
                     foreach (Hero hero in TeamHeroCoder.BattleState.foeHeroes) {
                         if (hero.health <= 0) continue;
                         if (hero.jobClass != job) continue;
-
-                        bool hasStatus = false;
-
-                        foreach (StatusEffectAndDuration se in hero.statusEffectsAndDurations) {
-                            if (se.statusEffect == status) {
-                                hasStatus = true;
-                                break;
-                            }
-                        }
-
-                        if (!hasStatus)
-                            return hero;
+                        if (!HeroHasStatus(hero, status)) return hero;
                     }
                 }
+
+                return null;
+            }
+
+            foreach (Hero hero in TeamHeroCoder.BattleState.foeHeroes) {
+                if (hero.health <= 0) continue;
+                if (!HeroHasStatus(hero, status)) return hero;
             }
 
             return null;
@@ -370,22 +352,28 @@ namespace PlayerCoder {
 
         public static Hero CheckEnemyWithStatus(params StatusEffect[] statuses) {
             foreach (Hero hero in TeamHeroCoder.BattleState.foeHeroes) {
+                if (hero.health <= 0) continue;
+                if (HeroHasStatus(hero, statuses)) return hero;
+            }
 
-                bool hasStatus = false;
+            return null;
+        }
 
-                //Search for ally with desired status effect
+        public static int CountEnemiesWithStatus(params StatusEffect[] statuses) {
+            int count = 0;
+
+            foreach (Hero hero in TeamHeroCoder.BattleState.foeHeroes) {
+                if (hero.health <= 0) continue;
+
                 foreach (StatusEffectAndDuration se in hero.statusEffectsAndDurations) {
                     if (statuses.Contains(se.statusEffect)) {
-                        hasStatus = true;
+                        count++;
                         break;
                     }
                 }
-
-                if (hasStatus) {
-                    return hero;
-                }
             }
-            return null;
+
+            return count;
         }
 
         public static bool CheckEnemyForItem(Item desiredItem) {
@@ -408,7 +396,7 @@ namespace PlayerCoder {
             return false;
         }
 
-        public static bool SelfHasStatus(Hero hero, params StatusEffect[] statuses) {
+        public static bool HeroHasStatus(Hero hero, params StatusEffect[] statuses) {
             foreach (StatusEffectAndDuration se in hero.statusEffectsAndDurations) {
                 if (statuses.Contains(se.statusEffect)) {
                     return true;
@@ -418,45 +406,32 @@ namespace PlayerCoder {
         }
 
         public static Hero CheckAllyWithoutStatus(StatusEffect status, params HeroJobClass[] jobs) {
-            foreach (Hero hero in TeamHeroCoder.BattleState.allyHeroes) {
-
-                //If a class is specified check for it
-                if (jobs.Length > 0 && !jobs.Contains(hero.jobClass)) continue;
-
-                bool hasStatus = false;
-
-                //Search for ally with desired status effect
-                foreach (StatusEffectAndDuration se in hero.statusEffectsAndDurations) {
-                    if (se.statusEffect == status) {
-                        hasStatus = true;
-                        break;
+            if (jobs.Length > 0) {
+                foreach (HeroJobClass job in jobs) {
+                    foreach (Hero hero in TeamHeroCoder.BattleState.allyHeroes) {
+                        if (hero.health <= 0) continue;
+                        if (hero.jobClass != job) continue;
+                        if (!HeroHasStatus(hero, status)) return hero;
                     }
                 }
 
-                if (!hasStatus) {
-                    return hero;
-                }
+                return null;
             }
+
+            foreach (Hero hero in TeamHeroCoder.BattleState.allyHeroes) {
+                if (hero.health <= 0) continue;
+                if (!HeroHasStatus(hero, status)) return hero;
+            }
+
             return null;
         }
 
         public static Hero CheckAllyWithStatus(params StatusEffect[] statuses) {
             foreach (Hero hero in TeamHeroCoder.BattleState.allyHeroes) {
-
-                bool hasStatus = false;
-
-                //Search for ally with desired status effect
-                foreach (StatusEffectAndDuration se in hero.statusEffectsAndDurations) {
-                    if (statuses.Contains(se.statusEffect)) {
-                        hasStatus = true;
-                        break;
-                    }
-                }
-
-                if (hasStatus) {
-                    return hero;
-                }
+                if (hero.health <= 0) continue;
+                if (HeroHasStatus(hero, statuses)) return hero;
             }
+            
             return null;
         }
 
@@ -496,8 +471,25 @@ namespace PlayerCoder {
 
         public static bool TryBasicSupport(HeroContext context) {
             if (TryAbilities(context.deadAlly, Ability.Resurrection, Ability.Revive)) return true;
+
+            if (context.activeHero.jobClass == HeroJobClass.Cleric) {
+                bool hasFaith = HeroHasStatus(context.activeHero, StatusEffect.Faith);
+                if (hasFaith) {
+                    if (TryAbilities(context.lowHPAlly, Ability.QuickHeal)) return true;
+                }
+            }
+
             if (TryAbilities(context.lowHPAlly, Ability.CureSerious, Ability.Potion)) return true;
             if (TryAbility(Ability.Ether, context.lowMPAlly)) return true;
+            return false;
+        }
+
+        public static bool TryRemedySupport(HeroContext context) {
+            if (TryAbility(Ability.PetrifyRemedy, context.petrifyRemTarget)) return true;
+            if (TryAbility(Ability.PoisonRemedy, context.poisonRemTarget)) return true;
+            if (TryAbility(Ability.SilenceRemedy, context.silenceRemTarget)) return true;
+            if (TryAbility(Ability.FullRemedy, context.fullRemTarget)) return true;
+
             return false;
         }
     }
